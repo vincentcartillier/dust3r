@@ -18,6 +18,23 @@ def postprocess(out, depth_mode, conf_mode):
         res['conf'] = reg_dense_conf(fmap[:, :, :, 3], mode=conf_mode)
     return res
 
+def postprocess_3dgs(out, depth_mode, conf_mode):
+    """
+    extract 3D points/confidence from prediction head output
+    """
+    fmap = out.permute(0, 2, 3, 1)  # B,H,W,3(4)+8
+    res = dict(pts3d=reg_dense_depth(fmap[:, :, :, 0:3], mode=depth_mode))
+
+    if conf_mode is not None:
+        res['conf'] = reg_dense_conf(fmap[:, :, :, 3], mode=conf_mode)
+    
+    # -- TODO:
+    res['alpha'] = fmap[:, :, :, 4]
+    res['quad'] = fmap[:, :, :, 5:8]
+    res['scale'] = fmap[:, :, :, 8:11]
+
+    return res
+
 
 def reg_dense_depth(xyz, mode):
     """
