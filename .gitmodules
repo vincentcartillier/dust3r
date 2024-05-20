@@ -4,3 +4,6 @@
 [submodule "dependencies/gaussian-splatting"]
 	path = dependencies/gaussian-splatting
 	url = git@github.com:vincentcartillier/gaussian-splatting.git
+[submodule "dependencies/FSGS"]
+	path = dependencies/FSGS
+	url = git@github.com:vincentcartillier/FSGS.git
