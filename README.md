@@ -9,7 +9,7 @@ The overall idea is to modify dust3r to predict 3DGS inputs.
 
 ##TODOs:
 
-* update the model so it outputs 3DGS attributes (`dust3r/model_w3dgs.py`)
+* update the model so it outputs 3DGS attributes (`dust3r/model_w3dgs.py`, `dust3r/heads/dpt_3dgs_head.py`)
 
 * create the 3DGS decoder that will take as input the `model_w3dgs.py` outputs. That decoder will load the gaussian-splatting attribute and render them at the provided camera poses.
 
