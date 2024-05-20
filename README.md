@@ -1,7 +1,41 @@
+### unsupervised Dust3r with gaussian-splatting
+The overall idea is to modify dust3r to predict 3DGS inputs.
+
+* In the original dust3r implementation, the model outputs aligned point maps for each input image (ie a 3D point cloud XYZ).
+
+* the idea is to modify dust3r to extend its output and make it predict gaussian-splatting attributes (3d gaussian sizes, rotation, alpha-transparency etc..)
+
+* The goal is then to send these gaussian-splatting prediction into a GS renderer and splat the 3d gaussians into the given frames. We then compute a photometric loss at the image pixel level and update dust3r weights accordingly.
+
+##TODOs:
+
+* update the model so it outputs 3DGS attributes (`dust3r/model_w3dgs.py`)
+
+* create the 3DGS decoder that will take as input the `model_w3dgs.py` outputs. That decoder will load the gaussian-splatting attribute and render them at the provided camera poses.
+
+* camera poses: I think at this stage we can assume GT camera poses during training.
+
+* The tricky part will be to fit the 3DGS module within dust3r so that gradient can flow from the image rendering loss all the way to the dust3r inputs. For this you may want to use the FSGS gaussian-splatting implementation (already a dependency of this repo). It is the same implementation of the original GS, but allows for depth supervision.
+
+* update the training pipeline with the new architechture ( see `train_3dgs_supervision.py`)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 ![demo](assets/dust3r.jpg)
 
-Official implementation of `DUSt3R: Geometric 3D Vision Made Easy`  
-[[Project page](https://dust3r.europe.naverlabs.com/)], [[DUSt3R arxiv](https://arxiv.org/abs/2312.14132)]  
+Official implementation of `DUSt3R: Geometric 3D Vision Made Easy`
+[[Project page](https://dust3r.europe.naverlabs.com/)], [[DUSt3R arxiv](https://arxiv.org/abs/2312.14132)]
 
 ![Example of reconstruction from two images](assets/pipeline1.jpg)
 
@@ -9,14 +43,14 @@ Official implementation of `DUSt3R: Geometric 3D Vision Made Easy`
 
 ```bibtex
 @inproceedings{dust3r_cvpr24,
-      title={DUSt3R: Geometric 3D Vision Made Easy}, 
+      title={DUSt3R: Geometric 3D Vision Made Easy},
       author={Shuzhe Wang and Vincent Leroy and Yohann Cabon and Boris Chidlovskii and Jerome Revaud},
       booktitle = {CVPR},
       year = {2024}
 }
 
 @misc{dust3r_arxiv23,
-      title={DUSt3R: Geometric 3D Vision Made Easy}, 
+      title={DUSt3R: Geometric 3D Vision Made Easy},
       author={Shuzhe Wang and Vincent Leroy and Yohann Cabon and Boris Chidlovskii and Jerome Revaud},
       year={2023},
       eprint={2312.14132},
@@ -64,7 +98,7 @@ cd dust3r
 2. Create the environment, here we show an example using conda.
 ```bash
 conda create -n dust3r python=3.11 cmake=3.14.0
-conda activate dust3r 
+conda activate dust3r
 conda install pytorch torchvision pytorch-cuda=12.1 -c pytorch -c nvidia  # use the correct version of cuda for your system
 pip install -r requirements.txt
 # Optional: you can also install additional packages to:
@@ -134,7 +168,7 @@ To run DUSt3R using Docker, including with NVIDIA CUDA support, follow these ins
 
 2. **Install NVIDIA Docker Toolkit**: For GPU support, install the NVIDIA Docker toolkit from the [Nvidia website](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
-3. **Build the Docker image and run it**: `cd` into the `./docker` directory and run the following commands: 
+3. **Build the Docker image and run it**: `cd` into the `./docker` directory and run the following commands:
 
 ```bash
 cd docker
@@ -143,13 +177,13 @@ bash run.sh --with-cuda --model_name="DUSt3R_ViTLarge_BaseDecoder_512_dpt"
 
 Or if you want to run the demo without CUDA support, run the following command:
 
-```bash 
+```bash
 cd docker
 bash run.sh --model_name="DUSt3R_ViTLarge_BaseDecoder_512_dpt"
 ```
 
-By default, `demo.py` is lanched with the option `--local_network`.  
-Visit `http://localhost:7860/` to access the web UI (or replace `localhost` with the machine's name to access it from the network).  
+By default, `demo.py` is lanched with the option `--local_network`.
+Visit `http://localhost:7860/` to access the web UI (or replace `localhost` with the machine's name to access it from the network).
 
 `run.sh` will launch docker-compose using either the [docker-compose-cuda.yml](docker/docker-compose-cuda.yml) or [docker-compose-cpu.ym](docker/docker-compose-cpu.yml) config file, then it starts the demo using [entrypoint.sh](docker/files/entrypoint.sh).
 
@@ -282,7 +316,7 @@ torchrun --nproc_per_node=4 train.py \
     --pretrained "checkpoints/CroCo_V2_ViTLarge_BaseDecoder.pth" \
     --lr 0.0001 --min_lr 1e-06 --warmup_epochs 1 --epochs 10 --batch_size 16 --accum_iter 1 \
     --save_freq 1 --keep_freq 5 --eval_freq 1 \
-    --output_dir "checkpoints/dust3r_demo_224"	  
+    --output_dir "checkpoints/dust3r_demo_224"
 
 # step 2 - train dust3r for 512 resolution
 torchrun --nproc_per_node=4 train.py \
