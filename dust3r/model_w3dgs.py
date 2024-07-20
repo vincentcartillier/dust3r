@@ -9,13 +9,25 @@ import torch
 import os
 from packaging import version
 import huggingface_hub
+import numpy as np
+import torchvision.transforms as tvf
 
 from .utils.misc import fill_default_args, freeze_all_params, is_symmetrized, interleave, transpose_to_landscape
 from .heads import head_factory
 from dust3r.patch_embed import get_patch_embed
+from dust3r.utils.device import to_cpu, collate_with_cat
+
 
 import dust3r.utils.path_to_croco  # noqa: F401
 from models.croco import CroCoNet  # noqa
+
+import sys
+sys.path.append("/nethome/abati7/flash/Work/recon/dust3r/dependencies/FSGS/")
+from gaussian_renderer import render
+from scene.cameras import Camera
+from scene.gaussian_model import GaussianModel
+from utils.general_utils import inverse_sigmoid
+from arguments import PipelineParams
 
 inf = float('inf')
 
@@ -70,13 +82,17 @@ class AsymmetricCroCo3DStereo3DGS (
         self.dec_blocks2 = deepcopy(self.dec_blocks)
         self.set_downstream_head(output_mode, head_type, landscape_only, depth_mode, conf_mode, **croco_kwargs)
         self.set_freeze(freeze)
+        self.pc = GaussianModel(max_sh_degree=3, active_sh_degree=3)
+        self.pipe = PipelineParams()
+        bg_color = [0, 0, 0]
+        self.bg_color = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
     @classmethod
     def from_pretrained(cls, pretrained_model_name_or_path, **kw):
         if os.path.isfile(pretrained_model_name_or_path):
             return load_model(pretrained_model_name_or_path, device='cpu')
         else:
-            return super(AsymmetricCroCo3DStereo, cls).from_pretrained(pretrained_model_name_or_path, **kw)
+            return super(AsymmetricCroCo3DStereo3DGS, cls).from_pretrained(pretrained_model_name_or_path, **kw)
 
     def _set_patch_embed(self, img_size=224, patch_size=16, enc_embed_dim=768):
         self.patch_embed = get_patch_embed(self.patch_embed_cls, img_size, patch_size, enc_embed_dim)
@@ -189,7 +205,29 @@ class AsymmetricCroCo3DStereo3DGS (
         head = getattr(self, f'head{head_num}')
         return head(decout, img_shape)
 
-    def forward(self, view1, view2):
+    def _set_pc_components(self, out):
+        # assuming batch size is 1
+        #TODO: make sure to set the activation functions for these
+        pts3d = out['pts3d'].reshape((-1,3))
+        shs = out['shsRGB'].reshape(-1,3,16)
+        N = pts3d.shape[0] #number of gaussians, rn = 224*224
+        self.pc._xyz = pts3d #reshape pts3d
+        self.pc.bg_color = torch.tensor([0., 0., 0.]).reshape((3,1,1)).cuda()
+        self.pc._opacity = out['alpha'].reshape((-1,1)) #reshape alpha 
+        self.pc.confidence = torch.ones_like(self.pc._opacity, device="cuda")
+        self.pc._scaling = out['scale'].reshape((-1,3)) #reshape scales
+        self.pc._rotation = out['quad'].reshape((-1,4)) #reshape quad
+
+        #both are from shsRGB
+        self.pc._features_dc = shs[:,:,0:1].transpose(1, 2) #first out of 16 coefficients [0:1]
+        self.pc._features_rest = shs[:,:,1:].transpose(1, 2) #the rest of the features [1:]
+
+    def render(self, viewpoint_cam):
+        render_pkg = render(viewpoint_cam, self.pc, self.pipe, self.bg_color.cuda())
+        image, viewspace_point_tensor, visibility_filter, radii = render_pkg["render"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        return image, viewspace_point_tensor, visibility_filter, radii
+
+    def forward(self, view1, view2, viewpointCamForImage1, viewpointCamForImage2): #, viewpoint_camera, pc
         # encode the two images --> B,S,D
         (shape1, shape2), (feat1, feat2), (pos1, pos2) = self._encode_symmetrized(view1, view2)
 
@@ -200,9 +238,16 @@ class AsymmetricCroCo3DStereo3DGS (
             res1 = self._downstream_head(1, [tok.float() for tok in dec1], shape1)
             res2 = self._downstream_head(2, [tok.float() for tok in dec2], shape2)
 
-        res2['pts3d_in_other_view'] = res2.pop('pts3d')  # predict view2's pts3d in view1's frame
+        # res2['pts3d_in_other_view'] = res2.pop('pts3d')  # predict view2's pts3d in view1's frame
 
         #TODO:
+        # use camera pose of the main camera as viewpoint camera
+        self._set_pc_components(res1)
+        image1viewInImage1, _viewspace_point_tensor_, visibility_filter1, radii1 = self.render(viewpointCamForImage1)
+
+        self._set_pc_components(res2)
+        image2viewInImage1, _viewspace_point_tensor_, visibility_filter2, radii2 = self.render(viewpointCamForImage2) #viewpointcam should from perspective of camera2
+
         # -- estimate the camera poses from pts3d predictions (no grad)
         # -- assume GT poses
         # -- splat the predicted gaussians
@@ -210,4 +255,8 @@ class AsymmetricCroCo3DStereo3DGS (
         # for GS?
         # will two views be enough for generalization?
 
-        return res1, res2
+        return {
+            "images": [image1viewInImage1, image2viewInImage1],
+            "visibility": [visibility_filter1, visibility_filter2],
+            "radii": [radii1, radii2]
+        }

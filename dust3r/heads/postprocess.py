@@ -30,8 +30,9 @@ def postprocess_3dgs(out, depth_mode, conf_mode):
     
     # -- TODO:
     res['alpha'] = fmap[:, :, :, 4]
-    res['quad'] = fmap[:, :, :, 5:8]
-    res['scale'] = fmap[:, :, :, 8:11]
+    res['quad'] = fmap[:, :, :, 5:9]
+    res['scale'] = fmap[:, :, :, 9:12]
+    res['shsRGB'] = fmap[:, :, :, 12:]
 
     return res
 

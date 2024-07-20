@@ -106,8 +106,8 @@ def create_dpt_3dgs_head(net, has_conf=False):
     ed = net.enc_embed_dim
     dd = net.dec_embed_dim
     extra_dims = 8 # alpha, quad (4), scale (3)
-    #TODO: need to add color (sh_degree)
-    return PixelwiseTaskWithDPT(num_channels=out_nchan + has_conf + extra_dims,
+    shsRGB = 16*3
+    return PixelwiseTaskWithDPT(num_channels=out_nchan + has_conf + extra_dims + shsRGB,
                                 feature_dim=feature_dim,
                                 last_dim=last_dim,
                                 hooks_idx=[0, l2*2//4, l2*3//4, l2],
